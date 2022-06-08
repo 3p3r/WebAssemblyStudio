@@ -19,6 +19,8 @@
  * SOFTWARE.
  */
 
+import { vol as fs } from "memfs";
+import * as path from "path";
 import { Service } from "../service";
 import { assert, getNextKey } from "../util";
 import { Directory } from "./Directory";
@@ -26,6 +28,9 @@ import { EventDispatcher } from "./EventDispatcher";
 import { Problem } from "./Problem";
 import { Project } from "./Project";
 import { FileType, isBinaryFileType, IStatusProvider, languageForFileType } from "./types";
+
+// debug code to map imported fs back to window
+// eval('window').FS = fs
 
 export class File {
   name: string;
@@ -125,7 +130,8 @@ export class File {
       this.bufferType = FileType.Wat;
       this.notifyDidChangeBuffer();
       monaco.editor.setModelLanguage(this.buffer, languageForFileType(FileType.Wat));
-      this.description = "This .wasm file is editable as a .wat file, and is automatically reassembled to .wasm when saved.";
+      this.description =
+        "This .wasm file is editable as a .wat file, and is automatically reassembled to .wasm when saved.";
       return;
     } else {
       this.buffer.setValue(this.data as string);
@@ -133,7 +139,7 @@ export class File {
       this.notifyDidChangeBuffer();
     }
   }
-  setProblems(problems: Problem []) {
+  setProblems(problems: Problem[]) {
     this.problems = problems;
     let file: File = this;
     while (file) {
@@ -152,7 +158,7 @@ export class File {
   }
   setData(data: string | ArrayBuffer, status?: IStatusProvider) {
     assert(data != null);
-    this.data = data;
+    this._setData(data);
     this.notifyDidChangeData();
     this.updateBuffer(status);
   }
@@ -208,13 +214,13 @@ export class File {
         try {
           const data = await Service.assembleWat(this.buffer.getValue(), status);
           this.resetDirty();
-          this.data = data;
+          this._setData(data);
         } catch (e) {
           status.logLn(e.message, "error");
         }
       }
     } else {
-      this.data = this.buffer.getValue();
+      this._setData(this.buffer.getValue());
       this.resetDirty();
     }
     this.notifyDidChangeData();
@@ -231,5 +237,13 @@ export class File {
       parent = parent.parent;
     }
     return false;
+  }
+  private _setData(rhs: string | ArrayBuffer) {
+    if (this.data === rhs) return;
+    if (typeof rhs === "string") {
+      fs.mkdirSync(path.dirname(this.getPath()), { recursive: true });
+      fs.writeFileSync(this.getPath(), rhs, { encoding: "utf8" });
+    }
+    this.data = rhs;
   }
 }
